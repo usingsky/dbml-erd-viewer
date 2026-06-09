@@ -17,7 +17,7 @@
     "url": "https://github.com/usingsky/dbml-erd-viewer/issues"
   },
   "license": "MIT",
-  "author": "Jinil Lee",
+  "author": "Jinil Lee <usingsky@gmail.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/usingsky/dbml-erd-viewer.git"

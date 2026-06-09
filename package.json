@@ -1,0 +1,98 @@
+{
+  "name": "dbml-erd-viewer",
+  "version": "0.1.0",
+  "description": "React component library that renders DBML database schemas as an interactive diagram.",
+  "keywords": [
+    "database",
+    "dbml",
+    "erd",
+    "react",
+    "react-flow",
+    "schema",
+    "viewer",
+    "xyflow"
+  ],
+  "homepage": "https://github.com/usingsky/dbml-erd-viewer#readme",
+  "bugs": {
+    "url": "https://github.com/usingsky/dbml-erd-viewer/issues"
+  },
+  "license": "MIT",
+  "author": "Jinil Lee",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/usingsky/dbml-erd-viewer.git"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "main": "./dist/dbml-erd-viewer.umd.cjs",
+  "module": "./dist/dbml-erd-viewer.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/dbml-erd-viewer.js",
+      "require": "./dist/dbml-erd-viewer.umd.cjs"
+    },
+    "./styles.css": "./dist/dbml-erd-viewer.css",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "build:demo": "vite build --config vite.config.demo.ts",
+    "preview": "vite preview",
+    "preview:demo": "vite preview --config vite.config.demo.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt --write",
+    "format:check": "oxfmt --check",
+    "check": "oxlint && oxfmt --check && tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@dbml/core": "^8.2.5",
+    "@xyflow/react": "^12.3.0"
+  },
+  "devDependencies": {
+    "@dagrejs/dagre": "^3.0.0",
+    "@fontsource-variable/inter": "^5.2.8",
+    "@microsoft/api-extractor": "^7.58.8",
+    "@types/node": "^25.9.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.2",
+    "elkjs": "^0.11.1",
+    "html-to-image": "^1.11.13",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.69.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16",
+    "vite-plugin-dts": "^5.0.2"
+  },
+  "peerDependencies": {
+    "@dagrejs/dagre": "^3.0.0",
+    "elkjs": "^0.11.0",
+    "html-to-image": "^1.11.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@dagrejs/dagre": {
+      "optional": true
+    },
+    "elkjs": {
+      "optional": true
+    },
+    "html-to-image": {
+      "optional": true
+    }
+  }
+}

@@ -1,0 +1,156 @@
+/* dbml-erd-viewer styles. Import once in your app: `import 'dbml-erd-viewer/styles.css'`. */
+
+.dv-viewer {
+  background: var(--dv-canvas, #fafbfc);
+  --dv-bg: #ffffff;
+  --dv-border: #d9dee5;
+  --dv-header-bg: #2d3748;
+  --dv-header-fg: #ffffff;
+  --dv-row-fg: #1a202c;
+  --dv-type-fg: #718096;
+  --dv-row-hover: #f1f5f9;
+  --dv-row-highlight: #dbeafe;
+  --dv-pk: #b7791f;
+  --dv-fk: #2b6cb0;
+  --dv-null: #b06a6a;
+  --dv-edge: #94a3b8;
+  --dv-edge-active: #2b6cb0;
+  --dv-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.dv-table {
+  background: var(--dv-bg);
+  border: 1px solid var(--dv-border);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-family: var(--dv-font);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.dv-table__header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 12px;
+  background: var(--dv-header-bg);
+  color: var(--dv-header-fg);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.dv-table__schema {
+  opacity: 0.7;
+  font-weight: 400;
+}
+
+.dv-table__body {
+  display: flex;
+  flex-direction: column;
+}
+
+.dv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px;
+  border-top: 1px solid var(--dv-border);
+  color: var(--dv-row-fg);
+}
+
+.dv-row:hover {
+  background: var(--dv-row-hover);
+}
+
+.dv-row--highlighted {
+  background: var(--dv-row-highlight);
+  box-shadow: inset 2px 0 0 var(--dv-edge-active, #2b6cb0);
+}
+
+.dv-row__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dv-row__name--pk {
+  font-weight: 600;
+}
+
+.dv-row__type {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dv-type-fg);
+  white-space: nowrap;
+}
+
+/* Nullability dot: filled = NOT NULL, hollow (border only) = nullable.
+   Centered vertically by the flex row; sized small to stay subtle. */
+.dv-row__null {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1.25px solid var(--dv-null);
+  box-sizing: border-box;
+  flex: none;
+}
+.dv-row__null--notnull {
+  background: var(--dv-null);
+}
+
+.dv-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: #fff;
+}
+
+.dv-badge--pk {
+  background: var(--dv-pk);
+}
+
+.dv-badge--fk {
+  background: var(--dv-fk);
+}
+
+/* ERD edges: MySQL-Workbench-style crow's-foot notation.
+   Solid line = identifying, dashed = non-identifying (set via stroke-dasharray).
+   Edge/marker stroke and fill are applied inline in ErdEdge (using the theme vars)
+   so the diagram exports correctly as an image — see src/components/ErdEdge.tsx. */
+
+/* Wide invisible path that captures pointer events for hover. */
+.dv-erd-edge__interaction {
+  stroke: transparent;
+  stroke-width: 18;
+  fill: none;
+}
+
+.dv-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.dv-error__message {
+  max-width: 640px;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid #feb2b2;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: #c53030;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

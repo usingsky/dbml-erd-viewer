@@ -1,13 +1,15 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { TableInfo } from '../types';
-import { HEADER_HEIGHT, NODE_WIDTH, ROW_HEIGHT } from '../layout/layout';
+import { HEADER_HEIGHT, ROW_HEIGHT, tableWidth, type NodeWidthBounds } from '../layout/layout';
 import { handleId } from './handles';
 
 export type TableNodeData = {
   table: TableInfo;
   /** Columns currently highlighted (e.g. endpoints of a hovered relation). */
   highlightedColumns?: Set<string>;
+  /** Min/max width bounds; must match what layout used so render and layout agree. */
+  widthBounds?: NodeWidthBounds;
 };
 
 export type TableNodeType = Node<TableNodeData, 'table'>;
@@ -56,9 +58,9 @@ function ColumnHandles({ column, top }: { column: string; top: number }) {
 }
 
 function TableNodeComponent({ data }: NodeProps<TableNodeType>) {
-  const { table, highlightedColumns } = data;
+  const { table, highlightedColumns, widthBounds } = data;
   return (
-    <div className="dv-table" style={{ width: NODE_WIDTH }}>
+    <div className="dv-table" style={{ width: tableWidth(table, widthBounds) }}>
       <div
         className="dv-table__header"
         style={
@@ -69,7 +71,9 @@ function TableNodeComponent({ data }: NodeProps<TableNodeType>) {
         title={table.note}
       >
         {table.schema && <span className="dv-table__schema">{table.schema}.</span>}
-        <span className="dv-table__name">{table.name}</span>
+        <span className="dv-table__name" title={table.name}>
+          {table.name}
+        </span>
       </div>
 
       <div className="dv-table__body">
@@ -93,10 +97,14 @@ function TableNodeComponent({ data }: NodeProps<TableNodeType>) {
                     FK
                   </span>
                 )}
-                {col.name}
+                <span className="dv-row__label" title={col.name}>
+                  {col.name}
+                </span>
               </span>
               <span className="dv-row__type">
-                {col.type}
+                <span className="dv-row__typename" title={col.type}>
+                  {col.type}
+                </span>
                 <span
                   className={`dv-row__null${col.notNull ? ' dv-row__null--notnull' : ''}`}
                   title={col.notNull ? 'Not null' : 'Nullable'}

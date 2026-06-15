@@ -73,18 +73,25 @@ body {
   align-items: center;
   gap: 9px;
 }
-.pg__mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: linear-gradient(135deg, var(--accent), #818cf8);
-  flex: none;
-}
 .pg__title {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.01em;
+}
+.pg__brand-gh {
+  display: inline-flex;
+  align-items: center;
+  color: #000;
+  transition: color 0.12s ease;
+}
+.pg__brand-gh:hover {
+  color: var(--accent);
+}
+.pg__brand-gh svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
 }
 .pg__subtitle {
   margin: 6px 0 10px;
@@ -285,6 +292,28 @@ input[type='checkbox'] {
   white-space: pre-wrap;
   word-break: break-word;
   overflow-x: auto;
+}
+
+.pg__positions {
+  margin-top: 12px;
+}
+
+.pg__positions-head {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted, #64748b);
+}
+
+.pg__positions .pg__snippet {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.pg__positions-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted, #64748b);
 }
 
 .pg__error {

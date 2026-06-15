@@ -154,6 +154,21 @@ If a `dagre`/`elk` layout throws (e.g. the dependency isn't installed), the view
 built-in `simple` layout and calls `onLayoutError`. `direction` is `'LR'` (left→right) or `'TB'`
 (top→bottom).
 
+### Node width
+
+Table nodes are sized to their content (the widest column row and the header), clamped between
+`minNodeWidth` and `maxNodeWidth`. Content wider than `maxNodeWidth` is truncated with an ellipsis
+(the full text stays in the element's `title`). Both are part of `layoutOptions`:
+
+| Option         | Default | Notes                                                              |
+| -------------- | ------- | ------------------------------------------------------------------ |
+| `minNodeWidth` | `160`   | Lower bound for a node's width, in px.                             |
+| `maxNodeWidth` | `320`   | Upper bound; longer column names/types ellipsize at this width.    |
+
+```tsx
+<DbmlViewer dbml={dbml} layoutOptions={{ minNodeWidth: 200, maxNodeWidth: 480 }} />
+```
+
 ## Persisting node positions
 
 Tables are draggable. To keep where the user moved them, store the positions yourself and pass
@@ -282,6 +297,10 @@ stylesheet for an app-wide default:
 `.dv-table`, `.dv-table__header`, `.dv-row`, `.dv-row--highlighted`, `.dv-badge--pk`,
 `.dv-badge--fk`, `.dv-erd-edge__path`, `.dv-erd-marker`. You can also pass `className`/`style` to
 the wrapper.
+
+> All bundled styles live in the `dbml-erd-viewer` [cascade layer](https://developer.mozilla.org/en-US/docs/Web/CSS/@layer).
+> Because unlayered styles always beat layered ones, your own CSS (options 2 and 3) overrides the
+> defaults regardless of import order or selector specificity — no `!important` required.
 
 ## Fonts
 

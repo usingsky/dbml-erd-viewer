@@ -45,6 +45,8 @@ export function Playground() {
   const [direction, setDirection] = useState<LayoutDirection>('LR');
   const [horizontalGap, setHorizontalGap] = useState(120);
   const [verticalGap, setVerticalGap] = useState(40);
+  const [minNodeWidth, setMinNodeWidth] = useState(160);
+  const [maxNodeWidth, setMaxNodeWidth] = useState(320);
 
   const [fitView, setFitView] = useState(true);
   const [showControls, setShowControls] = useState(true);
@@ -78,8 +80,8 @@ export function Playground() {
   }, [themePreset, colors, fontFamily]);
 
   const layoutOptions = useMemo(
-    () => ({ algorithm, direction, horizontalGap, verticalGap }),
-    [algorithm, direction, horizontalGap, verticalGap],
+    () => ({ algorithm, direction, horizontalGap, verticalGap, minNodeWidth, maxNodeWidth }),
+    [algorithm, direction, horizontalGap, verticalGap, minNodeWidth, maxNodeWidth],
   );
 
   const savePositions = (next: NodePositions) => {
@@ -128,8 +130,27 @@ export function Playground() {
       <aside className="pg__panel">
         <div className="pg__header">
           <div className="pg__brand">
-            <span className="pg__mark" />
             <h1 className="pg__title">dbml-erd-viewer</h1>
+            <a
+              className="pg__brand-gh"
+              href="https://github.com/usingsky/dbml-erd-viewer#readme"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="View the README on GitHub"
+              title="View the README on GitHub"
+            >
+              <svg
+                height="32"
+                aria-hidden="true"
+                data-component="Octicon"
+                viewBox="0 0 24 24"
+                version="1.1"
+                width="32"
+                data-view-component="true"
+              >
+                <path d="M10.226 17.284c-2.965-.36-5.054-2.493-5.054-5.256 0-1.123.404-2.336 1.078-3.144-.292-.741-.247-2.314.09-2.965.898-.112 2.111.36 2.83 1.01.853-.269 1.752-.404 2.853-.404 1.1 0 1.999.135 2.807.382.696-.629 1.932-1.1 2.83-.988.315.606.36 2.179.067 2.942.72.854 1.101 2 1.101 3.167 0 2.763-2.089 4.852-5.098 5.234.763.494 1.28 1.572 1.28 2.807v2.336c0 .674.561 1.056 1.235.786 4.066-1.55 7.255-5.615 7.255-10.646C23.5 6.188 18.334 1 11.978 1 5.62 1 .5 6.188.5 12.545c0 4.986 3.167 9.12 7.435 10.669.606.225 1.19-.18 1.19-.786V20.63a2.9 2.9 0 0 1-1.078.224c-1.483 0-2.359-.808-2.987-2.313-.247-.607-.517-.966-1.034-1.033-.27-.023-.359-.135-.359-.27 0-.27.45-.471.898-.471.652 0 1.213.404 1.797 1.235.45.651.921.943 1.483.943.561 0 .92-.202 1.437-.719.382-.381.674-.718.944-.943"></path>
+              </svg>
+            </a>
           </div>
           <p className="pg__subtitle">
             Interactive playground — tweak any prop and watch the diagram update.
@@ -221,6 +242,28 @@ export function Playground() {
               onChange={(e) => setVerticalGap(Number(e.target.value))}
             />
           </div>
+          <div className="pg__row">
+            <label>Min node width: {minNodeWidth}</label>
+            <input
+              type="range"
+              min={80}
+              max={320}
+              step={10}
+              value={minNodeWidth}
+              onChange={(e) => setMinNodeWidth(Number(e.target.value))}
+            />
+          </div>
+          <div className="pg__row">
+            <label>Max node width: {maxNodeWidth}</label>
+            <input
+              type="range"
+              min={160}
+              max={600}
+              step={10}
+              value={maxNodeWidth}
+              onChange={(e) => setMaxNodeWidth(Number(e.target.value))}
+            />
+          </div>
           {layoutError && <ErrorText text={layoutError} />}
         </section>
 
@@ -302,6 +345,22 @@ export function Playground() {
             </button>
             <Check label="persist positions" checked={persist} onChange={setPersist} inline />
           </div>
+          {persist && (
+            <div className="pg__positions">
+              <div className="pg__positions-head">
+                nodePositions ({Object.keys(positions).length})
+              </div>
+              {Object.keys(positions).length === 0 ? (
+                <p className="pg__positions-empty">Drag a table to record its position.</p>
+              ) : (
+                <pre className="pg__snippet">
+                  {Object.entries(positions)
+                    .map(([id, p]) => `${id}: { x: ${Math.round(p.x)}, y: ${Math.round(p.y)} }`)
+                    .join('\n')}
+                </pre>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="pg__section">
@@ -366,6 +425,8 @@ function buildSnippet(opts: {
     direction: string;
     horizontalGap: number;
     verticalGap: number;
+    minNodeWidth: number;
+    maxNodeWidth: number;
   };
   theme?: DbmlViewerTheme;
   fitView: boolean;
@@ -379,6 +440,8 @@ function buildSnippet(opts: {
   const loParts = [`algorithm: '${lo.algorithm}'`, `direction: '${lo.direction}'`];
   if (lo.horizontalGap !== 120) loParts.push(`horizontalGap: ${lo.horizontalGap}`);
   if (lo.verticalGap !== 40) loParts.push(`verticalGap: ${lo.verticalGap}`);
+  if (lo.minNodeWidth !== 160) loParts.push(`minNodeWidth: ${lo.minNodeWidth}`);
+  if (lo.maxNodeWidth !== 320) loParts.push(`maxNodeWidth: ${lo.maxNodeWidth}`);
   lines.push(`  layoutOptions={{ ${loParts.join(', ')} }}`);
 
   if (opts.theme) {

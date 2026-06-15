@@ -1,5 +1,11 @@
 import type { ParsedSchema } from '../types';
-import { NODE_WIDTH, tableHeight, type LayoutOptions, type NodeBox } from './layout';
+import {
+  tableHeight,
+  tableWidth,
+  MIN_NODE_WIDTH,
+  type LayoutOptions,
+  type NodeBox,
+} from './layout';
 
 // Minimal shape of the elkjs API we use, so we don't couple to its full types.
 interface ElkNode {
@@ -32,6 +38,7 @@ export async function elkLayout(
 
   const horizontalGap = options.horizontalGap ?? 120;
   const verticalGap = options.verticalGap ?? 40;
+  const widthBounds = { minWidth: options.minNodeWidth, maxWidth: options.maxNodeWidth };
   const direction = options.direction === 'TB' ? 'DOWN' : 'RIGHT';
 
   const graph: ElkNode = {
@@ -44,7 +51,7 @@ export async function elkLayout(
     },
     children: schema.tables.map((table) => ({
       id: table.id,
-      width: NODE_WIDTH,
+      width: tableWidth(table, widthBounds),
       height: tableHeight(table),
     })),
     // Edge child -> parent, matching the other algorithms' orientation.
@@ -62,7 +69,7 @@ export async function elkLayout(
     boxes.set(child.id, {
       x: child.x ?? 0,
       y: child.y ?? 0,
-      width: child.width ?? NODE_WIDTH,
+      width: child.width ?? MIN_NODE_WIDTH,
       height: child.height ?? 0,
     });
   }

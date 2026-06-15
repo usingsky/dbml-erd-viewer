@@ -1,5 +1,5 @@
 import type { ParsedSchema } from '../types';
-import { NODE_WIDTH, tableHeight, type LayoutOptions, type NodeBox } from './layout';
+import { tableHeight, tableWidth, type LayoutOptions, type NodeBox } from './layout';
 
 /**
  * Lay out the schema with dagre's Sugiyama-style layered algorithm (crossing
@@ -13,6 +13,7 @@ export async function dagreLayout(
   const dagre = await import('@dagrejs/dagre');
   const horizontalGap = options.horizontalGap ?? 120;
   const verticalGap = options.verticalGap ?? 40;
+  const widthBounds = { minWidth: options.minNodeWidth, maxWidth: options.maxNodeWidth };
   const rankdir = options.direction === 'TB' ? 'TB' : 'LR';
 
   const g = new dagre.graphlib.Graph();
@@ -20,7 +21,7 @@ export async function dagreLayout(
   g.setDefaultEdgeLabel(() => ({}));
 
   for (const table of schema.tables) {
-    g.setNode(table.id, { width: NODE_WIDTH, height: tableHeight(table) });
+    g.setNode(table.id, { width: tableWidth(table, widthBounds), height: tableHeight(table) });
   }
   // Edge child -> parent keeps the referenced table on the later rank.
   for (const rel of schema.relations) {

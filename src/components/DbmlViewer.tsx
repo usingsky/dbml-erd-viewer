@@ -17,10 +17,22 @@ import {
   useEdgesState,
   useNodesState,
   type Edge,
+  type FitViewOptions,
   type ReactFlowInstance,
+  type Rect as FlowRect,
+  type SetCenterOptions,
+  type Viewport,
+  type ViewportHelperFunctionOptions,
 } from '@xyflow/react';
 import { parseDbml, DbmlParseError } from '../parser/parseDbml';
-import { layoutSchema, type LayoutOptions, type NodeBox } from '../layout/layout';
+import {
+  layoutSchema,
+  tableHeight,
+  tableWidth,
+  type LayoutOptions,
+  type NodeWidthBounds,
+  type NodeBox,
+} from '../layout/layout';
 import { computeLayout, LayoutError } from '../layout/computeLayout';
 import {
   renderDiagram,
@@ -34,7 +46,7 @@ import { ErdEdge, type ErdEdgeData } from './ErdEdge';
 import { useRelationHighlight } from './useRelationHighlight';
 import { handleId } from './handles';
 import { themeToCssVars, type DbmlViewerTheme } from '../theme';
-import type { ParsedSchema, RelationInfo } from '../types';
+import type { ParsedSchema, RelationInfo, TableInfo } from '../types';
 
 const NO_RELATIONS: RelationInfo[] = [];
 
@@ -95,6 +107,24 @@ export interface DbmlViewerHandle {
   toDataUrl(options?: DiagramExportOptions): Promise<string>;
   /** Render the diagram and trigger a browser download. */
   download(filename: string, options?: DiagramExportOptions): Promise<void>;
+
+  // --- Viewport control (delegates to the underlying xyflow instance) ---
+  /** Fit the whole diagram into the viewport. */
+  fitView(options?: FitViewOptions): void;
+  /** Zoom in by one step. */
+  zoomIn(options?: ViewportHelperFunctionOptions): void;
+  /** Zoom out by one step. */
+  zoomOut(options?: ViewportHelperFunctionOptions): void;
+  /** Zoom to a specific level (e.g. `1` = 100%). */
+  zoomTo(zoomLevel: number, options?: ViewportHelperFunctionOptions): void;
+  /** Center the viewport on a flow-coordinate point. */
+  setCenter(x: number, y: number, options?: SetCenterOptions): void;
+  /** Fit a specific flow-coordinate rectangle into the viewport. */
+  fitBounds(bounds: FlowRect, options?: ViewportHelperFunctionOptions): void;
+  /** Set the viewport position and zoom directly. */
+  setViewport(viewport: Viewport, options?: ViewportHelperFunctionOptions): void;
+  /** Read the current viewport (`{ x, y, zoom }`); returns `undefined` before the diagram mounts. */
+  getViewport(): Viewport | undefined;
 }
 
 type ParseResult = { ok: true; schema: ParsedSchema } | { ok: false; error: DbmlParseError };
@@ -138,6 +168,63 @@ function sameIdSet(a: string[], b: string[]): boolean {
   return b.every((id) => set.has(id));
 }
 
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+function rectsOverlap(a: Rect, b: Rect, margin: number): boolean {
+  return (
+    a.x < b.x + b.w + margin &&
+    a.x + a.w + margin > b.x &&
+    a.y < b.y + b.h + margin &&
+    a.y + a.h + margin > b.y
+  );
+}
+
+/**
+ * When tables are added to an existing diagram, the freshly-computed layout box for a new
+ * table is in a different coordinate space than the preserved (kept/dragged) tables, so it
+ * can land on top of them. Keep its layout x (a relational hint) but push it down into free
+ * space so it never overlaps a fixed table or another just-placed new one. Mutates `positions`.
+ */
+function placeAddedTables(
+  schema: ParsedSchema,
+  positions: Map<string, XYPosition>,
+  isFixed: (id: string) => boolean,
+  gap: number,
+  widthBounds: NodeWidthBounds,
+): void {
+  const rectOf = (table: TableInfo, p: XYPosition): Rect => ({
+    x: p.x,
+    y: p.y,
+    w: tableWidth(table, widthBounds),
+    h: tableHeight(table),
+  });
+  const occupied: Rect[] = [];
+  for (const table of schema.tables) {
+    if (isFixed(table.id)) occupied.push(rectOf(table, positions.get(table.id)!));
+  }
+  for (const table of schema.tables) {
+    if (isFixed(table.id)) continue;
+    let pos = positions.get(table.id)!;
+    let rect = rectOf(table, pos);
+    let guard = 0;
+    // Drop below the lowest table it currently collides with, repeat until clear.
+    while (guard++ < 1000) {
+      const hits = occupied.filter((o) => rectsOverlap(rect, o, gap));
+      if (hits.length === 0) break;
+      const bottom = Math.max(...hits.map((o) => o.y + o.h));
+      pos = { x: pos.x, y: bottom + gap };
+      rect = rectOf(table, pos);
+    }
+    positions.set(table.id, pos);
+    occupied.push(rect);
+  }
+}
+
 /** Run the requested layout, falling back to the built-in `simple` layout (and reporting) on failure. */
 async function computeLayoutOrFallback(
   schema: ParsedSchema,
@@ -152,12 +239,16 @@ async function computeLayoutOrFallback(
   }
 }
 
-function buildNodes(schema: ParsedSchema, positions: Map<string, XYPosition>): TableNodeType[] {
+function buildNodes(
+  schema: ParsedSchema,
+  positions: Map<string, XYPosition>,
+  widthBounds: NodeWidthBounds,
+): TableNodeType[] {
   return schema.tables.map((table) => ({
     id: table.id,
     type: 'table',
     position: positions.get(table.id) ?? { x: 0, y: 0 },
-    data: { table },
+    data: { table, widthBounds },
   }));
 }
 
@@ -258,6 +349,15 @@ export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function
       download: async (filename, options) => {
         downloadDataUrl(await toDataUrl(options), filename);
       },
+      // Viewport control delegates to the live xyflow instance (no-ops before mount).
+      fitView: (options) => flowRef.current?.fitView(options as FitViewOptions<TableNodeType>),
+      zoomIn: (options) => flowRef.current?.zoomIn(options),
+      zoomOut: (options) => flowRef.current?.zoomOut(options),
+      zoomTo: (zoomLevel, options) => flowRef.current?.zoomTo(zoomLevel, options),
+      setCenter: (x, y, options) => flowRef.current?.setCenter(x, y, options),
+      fitBounds: (bounds, options) => flowRef.current?.fitBounds(bounds, options),
+      setViewport: (viewport, options) => flowRef.current?.setViewport(viewport, options),
+      getViewport: () => flowRef.current?.getViewport(),
     };
   }, []);
 
@@ -287,13 +387,15 @@ export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function
     direction = 'LR',
     horizontalGap,
     verticalGap,
+    minNodeWidth,
+    maxNodeWidth,
   } = layoutOptions ?? {};
 
   // Tracks the table-id set + layout options last used to position nodes, so we can skip
   // re-layout when only column-level details (or relations) change.
   const layoutStateRef = useRef<{ ids: string[]; optionsKey: string } | null>(null);
 
-  const optionsKey = `${algorithm}|${direction}|${horizontalGap}|${verticalGap}`;
+  const optionsKey = `${algorithm}|${direction}|${horizontalGap}|${verticalGap}|${minNodeWidth}|${maxNodeWidth}`;
 
   // Seed the flow from a set of layout boxes: resolve positions, set nodes/edges, record the
   // layout state, and optionally persist the arrangement and fit the view.
@@ -310,8 +412,22 @@ export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function
         fit?: boolean;
       },
     ) => {
+      const widthBounds: NodeWidthBounds = { minWidth: minNodeWidth, maxWidth: maxNodeWidth };
       const positions = resolvePositions(schema, boxes, opts.saved, opts.prior);
-      setNodes(buildNodes(schema, positions));
+      // Incremental update (existing tables preserved): drop newly-added tables into free
+      // space so they don't overlap the kept ones. Skipped on a full layout (no `prior`).
+      if (opts.prior) {
+        const prior = opts.prior;
+        const saved = opts.saved;
+        placeAddedTables(
+          schema,
+          positions,
+          (id) => prior.has(id) || saved?.[id] !== undefined,
+          verticalGap ?? 40,
+          widthBounds,
+        );
+      }
+      setNodes(buildNodes(schema, positions, widthBounds));
       setEdges(buildEdges(schema, positions));
       layoutStateRef.current = { ids, optionsKey: key };
       if (opts.emit) {
@@ -323,7 +439,7 @@ export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function
       }
       if (opts.fit) requestAnimationFrame(() => void flowRef.current?.fitView());
     },
-    [setNodes, setEdges],
+    [setNodes, setEdges, verticalGap, minNodeWidth, maxNodeWidth],
   );
 
   // Compute the layout (possibly async for 'elk'/'dagre') and seed the flow.
@@ -335,7 +451,14 @@ export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function
       return;
     }
     const schema = result.schema;
-    const opts: LayoutOptions = { algorithm, direction, horizontalGap, verticalGap };
+    const opts: LayoutOptions = {
+      algorithm,
+      direction,
+      horizontalGap,
+      verticalGap,
+      minNodeWidth,
+      maxNodeWidth,
+    };
     const ids = schema.tables.map((t) => t.id);
 
     // Positions currently on screen (includes user drags), from our controlled state.
@@ -377,6 +500,8 @@ export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function
     direction,
     horizontalGap,
     verticalGap,
+    minNodeWidth,
+    maxNodeWidth,
     optionsKey,
     fitView,
     applyBoxes,
@@ -389,14 +514,31 @@ export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function
   const relayout = useCallback(() => {
     if (!result.ok) return;
     const schema = result.schema;
-    const opts: LayoutOptions = { algorithm, direction, horizontalGap, verticalGap };
+    const opts: LayoutOptions = {
+      algorithm,
+      direction,
+      horizontalGap,
+      verticalGap,
+      minNodeWidth,
+      maxNodeWidth,
+    };
     const ids = schema.tables.map((t) => t.id);
     void computeLayoutOrFallback(schema, opts, (e) => onLayoutErrorRef.current?.(e)).then(
       (boxes) => {
         applyBoxes(schema, ids, optionsKey, boxes, { emit: true, fit: true });
       },
     );
-  }, [result, algorithm, direction, horizontalGap, verticalGap, optionsKey, applyBoxes]);
+  }, [
+    result,
+    algorithm,
+    direction,
+    horizontalGap,
+    verticalGap,
+    minNodeWidth,
+    maxNodeWidth,
+    optionsKey,
+    applyBoxes,
+  ]);
 
   const handleError = useCallback(() => {
     if (!result.ok) onParseError?.(result.error);

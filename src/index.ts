@@ -22,7 +22,7 @@ export type {
 } from '@xyflow/react';
 
 export { TableNode } from './components/TableNode';
-export type { TableNodeData, TableNodeType } from './components/TableNode';
+export type { TableNodeData, TableNodeType, EdgeConnection } from './components/TableNode';
 
 export { ErdEdge } from './components/ErdEdge';
 export type { ErdEdgeData, EdgeEndSpec } from './components/ErdEdge';

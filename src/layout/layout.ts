@@ -96,15 +96,18 @@ function headerTextLength(table: TableInfo): number {
  * FK graph (referencing table sits left of the table it references). Relaxation runs
  * at most `n` rounds, which also bounds the effect of cycles.
  */
-function assignLayers(schema: ParsedSchema): Map<string, number> {
+function assignLayers(
+  tables: TableInfo[],
+  relations: ParsedSchema['relations'],
+): Map<string, number> {
   const level = new Map<string, number>();
-  for (const t of schema.tables) level.set(t.id, 0);
+  for (const t of tables) level.set(t.id, 0);
 
-  const edges = schema.relations
+  const edges = relations
     .map((r) => [r.from.tableId, r.to.tableId] as const)
     .filter(([u, v]) => u !== v && level.has(u) && level.has(v));
 
-  for (let i = 0; i < schema.tables.length; i++) {
+  for (let i = 0; i < tables.length; i++) {
     let changed = false;
     for (const [u, v] of edges) {
       const next = level.get(u)! + 1;
@@ -121,8 +124,11 @@ function assignLayers(schema: ParsedSchema): Map<string, number> {
 /**
  * Compute node positions for the parsed schema.
  *
- * Tables are arranged left-to-right by their layer in the FK graph and stacked
- * vertically within each layer. The result is keyed by {@link TableInfo.id}.
+ * FK-connected tables are arranged left-to-right by their layer in the FK graph and stacked
+ * vertically within each layer. Tables with no relations at all are packed into a grid below
+ * that layout — filled left-to-right then wrapped — spanning roughly its width, so a large
+ * number of unrelated tables no longer pile up in a single tall left-hand column. The result
+ * is keyed by {@link TableInfo.id}.
  */
 export function layoutSchema(
   schema: ParsedSchema,
@@ -135,9 +141,21 @@ export function layoutSchema(
     maxWidth: options.maxNodeWidth,
   };
 
-  const level = assignLayers(schema);
+  // Split tables into those taking part in at least one relation and the fully isolated ones.
+  const connectedIds = new Set<string>();
+  for (const r of schema.relations) {
+    connectedIds.add(r.from.tableId);
+    connectedIds.add(r.to.tableId);
+  }
+  const connected = schema.tables.filter((t) => connectedIds.has(t.id));
+  const isolated = schema.tables.filter((t) => !connectedIds.has(t.id));
+
+  const boxes = new Map<string, NodeBox>();
+
+  // --- 1. The FK-connected tables: left-to-right layered DAG. ---
+  const level = assignLayers(connected, schema.relations);
   const byLevel = new Map<number, TableInfo[]>();
-  for (const table of schema.tables) {
+  for (const table of connected) {
     const l = level.get(table.id) ?? 0;
     let bucket = byLevel.get(l);
     if (!bucket) {
@@ -147,13 +165,12 @@ export function layoutSchema(
     bucket.push(table);
   }
 
-  const boxes = new Map<string, NodeBox>();
-  const sortedLevels = [...byLevel.keys()].sort((a, b) => a - b);
-
   // Each level is its own column; advance x by the widest node in the level so variable
   // node widths don't cause neighbouring columns to overlap.
+  let contentRight = 0;
+  let contentBottom = 0;
   let x = 0;
-  for (const l of sortedLevels) {
+  for (const l of [...byLevel.keys()].sort((a, b) => a - b)) {
     const tables = byLevel.get(l)!.sort((a, b) => a.name.localeCompare(b.name));
     let columnWidth = 0;
     let y = 0;
@@ -164,7 +181,35 @@ export function layoutSchema(
       columnWidth = Math.max(columnWidth, width);
       y += height + verticalGap;
     }
+    contentRight = Math.max(contentRight, x + columnWidth);
+    contentBottom = Math.max(contentBottom, y - verticalGap);
     x += columnWidth + horizontalGap;
+  }
+
+  // --- 2. The isolated tables: pack into a grid, filling left-to-right then wrapping,
+  //        under the connected layout and spanning roughly its width. ---
+  if (isolated.length > 0) {
+    // Without a connected layout to align to, aim for a roughly square grid.
+    const gridWidth =
+      contentRight > 0
+        ? contentRight
+        : Math.ceil(Math.sqrt(isolated.length)) * (MAX_NODE_WIDTH + horizontalGap);
+    let gx = 0;
+    let gy = contentBottom > 0 ? contentBottom + verticalGap * 2 : 0;
+    let rowHeight = 0;
+    for (const table of [...isolated].sort((a, b) => a.name.localeCompare(b.name))) {
+      const width = tableWidth(table, widthBounds);
+      const height = tableHeight(table);
+      // Wrap to the next row once the current one would overflow the target width.
+      if (gx > 0 && gx + width > gridWidth) {
+        gx = 0;
+        gy += rowHeight + verticalGap;
+        rowHeight = 0;
+      }
+      boxes.set(table.id, { x: gx, y: gy, width, height });
+      gx += width + horizontalGap;
+      rowHeight = Math.max(rowHeight, height);
+    }
   }
 
   return boxes;

@@ -41,17 +41,23 @@ import {
   ExportError,
   type DiagramExportOptions,
 } from '../export';
-import { TableNode, type TableNodeType } from './TableNode';
-import { ErdEdge, type ErdEdgeData } from './ErdEdge';
+import {
+  TableNode,
+  EdgeConnectionContext,
+  type TableNodeType,
+  type EdgeConnection,
+} from './TableNode';
+import { ErdEdge, FloatingEdge, type ErdEdgeData } from './ErdEdge';
 import { useRelationHighlight } from './useRelationHighlight';
 import { handleId } from './handles';
+import { ColumnHoverContext } from './columnHoverContext';
 import { themeToCssVars, type DbmlViewerTheme } from '../theme';
 import type { ParsedSchema, RelationInfo, TableInfo } from '../types';
 
 const NO_RELATIONS: RelationInfo[] = [];
 
 const nodeTypes = { table: TableNode };
-const edgeTypes = { erd: ErdEdge };
+const edgeTypes = { erd: ErdEdge, 'erd-floating': FloatingEdge };
 
 /** Simple 2×2 grid icon for the "auto layout" control button. */
 function AutoLayoutIcon() {
@@ -84,6 +90,12 @@ export interface DbmlViewerProps {
   showBackground?: boolean;
   /** Layout tuning: algorithm (`'simple'` | `'dagre'` | `'elk'`), direction, gaps. */
   layoutOptions?: LayoutOptions;
+  /**
+   * How edges attach to tables. `'column'` (default) anchors each edge to its specific
+   * FK/PK column rows. `'floating'` connects table-to-table, attaching wherever the two
+   * tables face each other and following them as they move.
+   */
+  edgeConnection?: EdgeConnection;
   /** Called when the DBML fails to parse. */
   onParseError?: (error: DbmlParseError) => void;
   /** Called when a non-default layout fails (e.g. optional dependency missing). */
@@ -239,39 +251,78 @@ async function computeLayoutOrFallback(
   }
 }
 
+/** Map each table id to the set of its columns that an edge attaches to. */
+function connectedColumnsByTable(schema: ParsedSchema): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  const add = (tableId: string, column: string | undefined) => {
+    if (!column) return;
+    let set = map.get(tableId);
+    if (!set) {
+      set = new Set<string>();
+      map.set(tableId, set);
+    }
+    set.add(column);
+  };
+  for (const rel of schema.relations) {
+    rel.from.columns.forEach((c) => add(rel.from.tableId, c));
+    rel.to.columns.forEach((c) => add(rel.to.tableId, c));
+  }
+  return map;
+}
+
 function buildNodes(
   schema: ParsedSchema,
   positions: Map<string, XYPosition>,
   widthBounds: NodeWidthBounds,
+  connectedColumns: Map<string, Set<string>>,
 ): TableNodeType[] {
   return schema.tables.map((table) => ({
     id: table.id,
     type: 'table',
     position: positions.get(table.id) ?? { x: 0, y: 0 },
-    data: { table, widthBounds },
+    data: { table, widthBounds, connectedColumns: connectedColumns.get(table.id) },
   }));
 }
 
-function buildEdges(schema: ParsedSchema, positions: Map<string, XYPosition>): Edge<ErdEdgeData>[] {
+/**
+ * Pick the source/target column handles for a column-anchored edge. Attaches on each table's
+ * inward-facing side so the edge runs between the facing edges and doesn't cross a node body;
+ * a self-reference keeps both ends on the right so the loop bows outward.
+ */
+function columnHandles(
+  rel: RelationInfo,
+  positions: Map<string, XYPosition>,
+): { sourceHandle: string; targetHandle: string } {
+  const selfRef = rel.from.tableId === rel.to.tableId;
+  const fromOnLeft = selfRef
+    ? false
+    : (positions.get(rel.from.tableId)?.x ?? 0) > (positions.get(rel.to.tableId)?.x ?? 0);
+  const fromSide = fromOnLeft ? 'left' : 'right';
+  const toSide = selfRef ? 'right' : fromOnLeft ? 'right' : 'left';
+  return {
+    sourceHandle: handleId(rel.from.columns[0] ?? '', fromSide, 'source'),
+    targetHandle: handleId(rel.to.columns[0] ?? '', toSide, 'target'),
+  };
+}
+
+function buildEdges(
+  schema: ParsedSchema,
+  positions: Map<string, XYPosition>,
+  edgeConnection: EdgeConnection,
+): Edge<ErdEdgeData>[] {
+  const floating = edgeConnection === 'floating';
   return schema.relations.map((rel) => {
-    // `from` is the child (FK holder), `to` is the parent (referenced).
-    const fromPos = positions.get(rel.from.tableId);
-    const toPos = positions.get(rel.to.tableId);
-    // Attach on the inward-facing side of each table so edges don't cross the body.
-    const fromOnLeft = (fromPos?.x ?? 0) > (toPos?.x ?? 0);
-    const fromSide = fromOnLeft ? 'left' : 'right';
-    const toSide = fromOnLeft ? 'right' : 'left';
-
-    const fromCol = rel.from.columns[0] ?? '';
-    const toCol = rel.to.columns[0] ?? '';
-
+    // Floating edges compute their own attachment from node geometry, so they connect to the
+    // table's single centre handle (no specific handle id) rather than a column row.
+    const handles = floating
+      ? { sourceHandle: undefined, targetHandle: undefined }
+      : columnHandles(rel, positions);
     return {
       id: rel.id,
       source: rel.from.tableId,
       target: rel.to.tableId,
-      sourceHandle: handleId(fromCol, fromSide, 'source'),
-      targetHandle: handleId(toCol, toSide, 'target'),
-      type: 'erd',
+      ...handles,
+      type: floating ? 'erd-floating' : 'erd',
       data: {
         kind: rel.kind,
         sourceEnd: { cardinality: rel.from.relation, optional: rel.from.optional },
@@ -298,6 +349,7 @@ export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function
     showMiniMap = false,
     showBackground = true,
     layoutOptions,
+    edgeConnection = 'column',
     onParseError,
     onLayoutError,
     nodePositions,
@@ -427,8 +479,8 @@ export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function
           widthBounds,
         );
       }
-      setNodes(buildNodes(schema, positions, widthBounds));
-      setEdges(buildEdges(schema, positions));
+      setNodes(buildNodes(schema, positions, widthBounds, connectedColumnsByTable(schema)));
+      setEdges(buildEdges(schema, positions, edgeConnection));
       layoutStateRef.current = { ids, optionsKey: key };
       if (opts.emit) {
         const map: NodePositions = {};
@@ -439,7 +491,7 @@ export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function
       }
       if (opts.fit) requestAnimationFrame(() => void flowRef.current?.fitView());
     },
-    [setNodes, setEdges, verticalGap, minNodeWidth, maxNodeWidth],
+    [setNodes, setEdges, verticalGap, minNodeWidth, maxNodeWidth, edgeConnection],
   );
 
   // Compute the layout (possibly async for 'elk'/'dagre') and seed the flow.
@@ -548,11 +600,8 @@ export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function
 
   // Relation hover: highlight the edge and its two connected columns.
   const relations = result.ok ? result.schema.relations : NO_RELATIONS;
-  const { displayNodes, displayEdges, onEdgeMouseEnter, onEdgeMouseLeave } = useRelationHighlight(
-    relations,
-    nodes,
-    edges,
-  );
+  const { displayNodes, displayEdges, onEdgeMouseEnter, onEdgeMouseLeave, onColumnHover } =
+    useRelationHighlight(relations, nodes, edges);
 
   // Theme tokens become CSS variables; explicit `style` still wins over them.
   const wrapperStyle: CSSProperties = {
@@ -576,35 +625,39 @@ export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function
       className={`dv-viewer${className ? ` ${className}` : ''}`}
       style={wrapperStyle}
     >
-      <ReactFlow<TableNodeType, Edge<ErdEdgeData>>
-        nodes={displayNodes}
-        edges={displayEdges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onEdgeMouseEnter={onEdgeMouseEnter}
-        onEdgeMouseLeave={onEdgeMouseLeave}
-        onNodeDragStop={handleNodeDragStop}
-        onInit={(instance) => {
-          flowRef.current = instance;
-        }}
-        fitView={fitView}
-        nodesConnectable={false}
-        elementsSelectable
-        minZoom={0.1}
-        proOptions={{ hideAttribution: true }}
-      >
-        {showBackground && <Background />}
-        {showControls && (
-          <Controls>
-            <ControlButton onClick={relayout} title="Auto layout" aria-label="Auto layout">
-              <AutoLayoutIcon />
-            </ControlButton>
-          </Controls>
-        )}
-        {showMiniMap && <MiniMap pannable zoomable />}
-      </ReactFlow>
+      <EdgeConnectionContext.Provider value={edgeConnection}>
+        <ColumnHoverContext.Provider value={onColumnHover}>
+          <ReactFlow<TableNodeType, Edge<ErdEdgeData>>
+            nodes={displayNodes}
+            edges={displayEdges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onEdgeMouseEnter={onEdgeMouseEnter}
+            onEdgeMouseLeave={onEdgeMouseLeave}
+            onNodeDragStop={handleNodeDragStop}
+            onInit={(instance) => {
+              flowRef.current = instance;
+            }}
+            fitView={fitView}
+            nodesConnectable={false}
+            elementsSelectable
+            minZoom={0.1}
+            proOptions={{ hideAttribution: true }}
+          >
+            {showBackground && <Background />}
+            {showControls && (
+              <Controls>
+                <ControlButton onClick={relayout} title="Auto layout" aria-label="Auto layout">
+                  <AutoLayoutIcon />
+                </ControlButton>
+              </Controls>
+            )}
+            {showMiniMap && <MiniMap pannable zoomable />}
+          </ReactFlow>
+        </ColumnHoverContext.Provider>
+      </EdgeConnectionContext.Provider>
     </div>
   );
 });

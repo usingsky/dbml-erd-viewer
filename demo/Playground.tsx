@@ -5,6 +5,7 @@ import {
   lightTheme,
   type DbmlViewerHandle,
   type DbmlViewerTheme,
+  type EdgeConnection,
   type LayoutAlgorithm,
   type LayoutDirection,
   type NodePositions,
@@ -21,7 +22,7 @@ const loadPositions = (): NodePositions => {
   }
 };
 
-type ThemePreset = 'none' | 'light' | 'dark';
+type ThemePreset = 'light' | 'dark';
 type ColorKey = 'headerBackground' | 'edge' | 'primaryKey' | 'foreignKey';
 type ColorState = Record<ColorKey, { on: boolean; value: string }>;
 
@@ -39,6 +40,52 @@ const DEFAULT_COLORS: ColorState = {
   foreignKey: { on: false, value: '#2b6cb0' },
 };
 
+// Web-hosted fonts to try via the `fontFamily` theme token. `value` is the CSS font-family;
+// `href` is the Google Fonts stylesheet that gets injected on demand when the font is picked.
+const FONT_OPTIONS: { label: string; value: string; href?: string }[] = [
+  { label: 'System default', value: '' },
+  {
+    label: 'Inter',
+    value: '"Inter", sans-serif',
+    href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap',
+  },
+  {
+    label: 'Roboto',
+    value: '"Roboto", sans-serif',
+    href: 'https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap',
+  },
+  {
+    label: 'Poppins',
+    value: '"Poppins", sans-serif',
+    href: 'https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap',
+  },
+  {
+    label: 'Lato',
+    value: '"Lato", sans-serif',
+    href: 'https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap',
+  },
+  {
+    label: 'JetBrains Mono',
+    value: '"JetBrains Mono", monospace',
+    href: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap',
+  },
+  {
+    label: 'Roboto Mono',
+    value: '"Roboto Mono", monospace',
+    href: 'https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;600&display=swap',
+  },
+];
+
+/** Inject a font stylesheet `<link>` once (idempotent by href). */
+function loadFontStylesheet(href: string) {
+  if (document.querySelector(`link[data-pg-font="${href}"]`)) return;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  link.dataset.pgFont = href;
+  document.head.appendChild(link);
+}
+
 export function Playground() {
   const [dbml, setDbml] = useState(SCHEMA_PRESETS[0].dbml);
   const [algorithm, setAlgorithm] = useState<LayoutAlgorithm>('simple');
@@ -47,18 +94,21 @@ export function Playground() {
   const [verticalGap, setVerticalGap] = useState(40);
   const [minNodeWidth, setMinNodeWidth] = useState(160);
   const [maxNodeWidth, setMaxNodeWidth] = useState(320);
+  const [edgeConnection, setEdgeConnection] = useState<EdgeConnection>('column');
 
   const [fitView, setFitView] = useState(true);
   const [showControls, setShowControls] = useState(true);
   const [showMiniMap, setShowMiniMap] = useState(false);
   const [showBackground, setShowBackground] = useState(true);
 
-  const [themePreset, setThemePreset] = useState<ThemePreset>('none');
+  const [themePreset, setThemePreset] = useState<ThemePreset>('light');
   const [colors, setColors] = useState<ColorState>(DEFAULT_COLORS);
   const [fontFamily, setFontFamily] = useState('');
 
   const [persist, setPersist] = useState(false);
   const [positions, setPositions] = useState<NodePositions>(loadPositions);
+
+  const [panelWidth, setPanelWidth] = useState(360);
 
   const [parseError, setParseError] = useState<string | null>(null);
   const [layoutError, setLayoutError] = useState<string | null>(null);
@@ -68,14 +118,12 @@ export function Playground() {
 
   // Build the theme object from the preset + enabled color overrides.
   const theme = useMemo<DbmlViewerTheme | undefined>(() => {
-    const base =
-      themePreset === 'light' ? lightTheme : themePreset === 'dark' ? darkTheme : undefined;
+    const base = themePreset === 'dark' ? darkTheme : lightTheme;
     const overrides: DbmlViewerTheme = {};
     for (const { key } of COLOR_FIELDS) {
       if (colors[key].on) overrides[key] = colors[key].value;
     }
     if (fontFamily.trim()) overrides.fontFamily = fontFamily.trim();
-    if (!base && Object.keys(overrides).length === 0) return undefined;
     return { ...base, ...overrides };
   }, [themePreset, colors, fontFamily]);
 
@@ -93,6 +141,24 @@ export function Playground() {
     setPositions({});
   };
 
+  // Drag the divider to resize the settings panel against the preview pane.
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = panelWidth;
+    const onMove = (ev: MouseEvent) => {
+      setPanelWidth(Math.min(640, Math.max(260, startWidth + (ev.clientX - startX))));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+    };
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
   const setColor = (key: ColorKey, patch: Partial<{ on: boolean; value: string }>) =>
     setColors((c) => ({ ...c, [key]: { ...c[key], ...patch } }));
 
@@ -106,6 +172,7 @@ export function Playground() {
     () =>
       buildSnippet({
         layoutOptions,
+        edgeConnection,
         theme,
         fitView,
         showControls,
@@ -113,7 +180,16 @@ export function Playground() {
         showBackground,
         persist,
       }),
-    [layoutOptions, theme, fitView, showControls, showMiniMap, showBackground, persist],
+    [
+      layoutOptions,
+      edgeConnection,
+      theme,
+      fitView,
+      showControls,
+      showMiniMap,
+      showBackground,
+      persist,
+    ],
   );
 
   // Clear stale error messages when the inputs that could fix them change.
@@ -127,7 +203,10 @@ export function Playground() {
 
   return (
     <div className="pg">
-      <aside className="pg__panel">
+      <aside
+        className="pg__panel"
+        style={{ ['--pg-panel-width' as string]: `${panelWidth}px` } as React.CSSProperties}
+      >
         <div className="pg__header">
           <div className="pg__brand">
             <h1 className="pg__title">dbml-erd-viewer</h1>
@@ -171,8 +250,7 @@ export function Playground() {
 
         <section className="pg__section">
           <h2>Source</h2>
-          <div className="pg__row">
-            <label>Example</label>
+          <Field label="Example">
             <select
               onChange={(e) => {
                 const preset = SCHEMA_PRESETS.find((p) => p.id === e.target.value);
@@ -186,7 +264,7 @@ export function Playground() {
                 </option>
               ))}
             </select>
-          </div>
+          </Field>
           <textarea
             className="pg__textarea"
             value={dbml}
@@ -198,8 +276,7 @@ export function Playground() {
 
         <section className="pg__section">
           <h2>Layout</h2>
-          <div className="pg__row">
-            <label>Algorithm</label>
+          <Field label="Algorithm">
             <select
               data-testid="algorithm"
               value={algorithm}
@@ -209,9 +286,8 @@ export function Playground() {
               <option value="dagre">dagre</option>
               <option value="elk">elk</option>
             </select>
-          </div>
-          <div className="pg__row">
-            <label>Direction</label>
+          </Field>
+          <Field label="Direction">
             <select
               value={direction}
               onChange={(e) => setDirection(e.target.value as LayoutDirection)}
@@ -219,51 +295,57 @@ export function Playground() {
               <option value="LR">LR (left→right)</option>
               <option value="TB">TB (top→bottom)</option>
             </select>
-          </div>
-          <div className="pg__row">
-            <label>Horizontal gap: {horizontalGap}</label>
-            <input
-              type="range"
-              min={40}
-              max={320}
-              step={10}
-              value={horizontalGap}
-              onChange={(e) => setHorizontalGap(Number(e.target.value))}
-            />
-          </div>
-          <div className="pg__row">
-            <label>Vertical gap: {verticalGap}</label>
-            <input
-              type="range"
-              min={10}
-              max={200}
-              step={10}
-              value={verticalGap}
-              onChange={(e) => setVerticalGap(Number(e.target.value))}
-            />
-          </div>
-          <div className="pg__row">
-            <label>Min node width: {minNodeWidth}</label>
-            <input
-              type="range"
-              min={80}
-              max={320}
-              step={10}
-              value={minNodeWidth}
-              onChange={(e) => setMinNodeWidth(Number(e.target.value))}
-            />
-          </div>
-          <div className="pg__row">
-            <label>Max node width: {maxNodeWidth}</label>
-            <input
-              type="range"
-              min={160}
-              max={600}
-              step={10}
-              value={maxNodeWidth}
-              onChange={(e) => setMaxNodeWidth(Number(e.target.value))}
-            />
-          </div>
+          </Field>
+          <Field label="Edge style">
+            <select
+              data-testid="edge-connection"
+              value={edgeConnection}
+              onChange={(e) => setEdgeConnection(e.target.value as EdgeConnection)}
+            >
+              <option value="column">column-anchored</option>
+              <option value="floating">floating</option>
+            </select>
+          </Field>
+
+          <SubHead>Spacing</SubHead>
+          <RangeField
+            label="Horizontal gap"
+            value={horizontalGap}
+            min={40}
+            max={320}
+            step={10}
+            unit="px"
+            onChange={setHorizontalGap}
+          />
+          <RangeField
+            label="Vertical gap"
+            value={verticalGap}
+            min={10}
+            max={200}
+            step={10}
+            unit="px"
+            onChange={setVerticalGap}
+          />
+
+          <SubHead>Node width</SubHead>
+          <RangeField
+            label="Min"
+            value={minNodeWidth}
+            min={80}
+            max={320}
+            step={10}
+            unit="px"
+            onChange={setMinNodeWidth}
+          />
+          <RangeField
+            label="Max"
+            value={maxNodeWidth}
+            min={160}
+            max={600}
+            step={10}
+            unit="px"
+            onChange={setMaxNodeWidth}
+          />
           {layoutError && <ErrorText text={layoutError} />}
         </section>
 
@@ -279,17 +361,17 @@ export function Playground() {
 
         <section className="pg__section">
           <h2>Theme</h2>
-          <div className="pg__row">
-            <label>Preset</label>
+          <Field label="Preset">
             <select
               value={themePreset}
               onChange={(e) => setThemePreset(e.target.value as ThemePreset)}
             >
-              <option value="none">none (default)</option>
-              <option value="light">lightTheme</option>
-              <option value="dark">darkTheme</option>
+              <option value="light">light</option>
+              <option value="dark">dark</option>
             </select>
-          </div>
+          </Field>
+
+          <SubHead>Color overrides</SubHead>
           {COLOR_FIELDS.map(({ key, label }) => (
             <div className="pg__row" key={key}>
               <label className="pg__color">
@@ -307,15 +389,24 @@ export function Playground() {
               />
             </div>
           ))}
-          <div className="pg__row">
-            <label>Font family</label>
-            <input
-              type="text"
-              placeholder="e.g. Inter, sans-serif"
+          <SubHead>Font</SubHead>
+          <Field label="Font family">
+            <select
+              data-testid="font-family"
               value={fontFamily}
-              onChange={(e) => setFontFamily(e.target.value)}
-            />
-          </div>
+              onChange={(e) => {
+                const opt = FONT_OPTIONS.find((f) => f.value === e.target.value);
+                if (opt?.href) loadFontStylesheet(opt.href);
+                setFontFamily(e.target.value);
+              }}
+            >
+              {FONT_OPTIONS.map((f) => (
+                <option key={f.label} value={f.value}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </Field>
         </section>
 
         <section className="pg__section">
@@ -374,11 +465,20 @@ export function Playground() {
         </section>
       </aside>
 
+      <div
+        className="pg__resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize settings panel"
+        onMouseDown={startResize}
+      />
+
       <main className="pg__viewer">
         <DbmlViewer
           ref={viewerRef}
           dbml={dbml}
           layoutOptions={layoutOptions}
+          edgeConnection={edgeConnection}
           theme={theme}
           fitView={fitView}
           showControls={showControls}
@@ -392,6 +492,64 @@ export function Playground() {
       </main>
     </div>
   );
+}
+
+/** A stacked form field: label (with optional right-aligned value) above a full-width control. */
+function Field({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="pg__field">
+      <div className="pg__field-head">
+        <label>{label}</label>
+        {value != null && <span className="pg__field-val">{value}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** A labelled full-width range slider with a live value readout (no layout shift). */
+function RangeField({
+  label,
+  value,
+  min,
+  max,
+  step,
+  unit = '',
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  unit?: string;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <Field label={label} value={`${value}${unit}`}>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+    </Field>
+  );
+}
+
+/** A small sub-group heading within a section. */
+function SubHead({ children }: { children: React.ReactNode }) {
+  return <h3 className="pg__subhead">{children}</h3>;
 }
 
 function Check({
@@ -428,6 +586,7 @@ function buildSnippet(opts: {
     minNodeWidth: number;
     maxNodeWidth: number;
   };
+  edgeConnection: EdgeConnection;
   theme?: DbmlViewerTheme;
   fitView: boolean;
   showControls: boolean;
@@ -443,6 +602,8 @@ function buildSnippet(opts: {
   if (lo.minNodeWidth !== 160) loParts.push(`minNodeWidth: ${lo.minNodeWidth}`);
   if (lo.maxNodeWidth !== 320) loParts.push(`maxNodeWidth: ${lo.maxNodeWidth}`);
   lines.push(`  layoutOptions={{ ${loParts.join(', ')} }}`);
+
+  if (opts.edgeConnection !== 'column') lines.push(`  edgeConnection="${opts.edgeConnection}"`);
 
   if (opts.theme) {
     const entries = Object.entries(opts.theme).map(([k, v]) => `${k}: '${v}'`);

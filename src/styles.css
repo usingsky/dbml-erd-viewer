@@ -79,7 +79,6 @@
 
   .dv-row--highlighted {
     background: var(--dv-row-highlight);
-    box-shadow: inset 2px 0 0 var(--dv-edge-active, #2b6cb0);
   }
 
   .dv-row__name {

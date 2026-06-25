@@ -22,9 +22,11 @@
 
 - **DBML in, diagram out** — parses schemas with [`@dbml/core`](https://github.com/holistics/dbml); tables become draggable nodes with PK/FK badges, types, notes, and a nullability dot (filled = `not null`, hollow = nullable).
 - **Crow's-foot notation** — MySQL-Workbench-style edges: identifying (solid) vs non-identifying (dashed), cardinality, and optionality, all inferred from the DBML.
-- **Pluggable layout** — zero-dependency built-in layout, or opt into [`dagre`](https://github.com/dagrejs/dagre) / [`elkjs`](https://github.com/kieler/elkjs) for crossing minimization.
-- **Themeable** — light/dark presets plus per-token CSS variables and custom fonts.
-- **Interactive** — drag tables, persist positions, hover to highlight related columns, one-click auto-layout.
+- **Pluggable layout** — zero-dependency built-in layout, or opt into [`dagre`](https://github.com/dagrejs/dagre) / [`elkjs`](https://github.com/kieler/elkjs) for crossing minimization. Content-sized nodes with configurable min/max width.
+- **Flexible edges** — column-anchored (default) or floating table-to-table connections that follow tables as they move.
+- **Themeable** — light/dark presets plus per-token CSS variables (in a cascade layer) and custom fonts.
+- **Interactive** — drag tables, persist positions, hover an edge **or** column to highlight the relationship, one-click auto-layout.
+- **Imperative API** — control the viewport (`fitView`, zoom, center) and export via a `ref`.
 - **Export** — save the diagram as PNG or SVG.
 - **Typed & dual-format** — ships TypeScript types, ESM + UMD.
 
@@ -105,6 +107,7 @@ Table line_items {
 | `showMiniMap`    | `boolean`                     | `false` | Show the minimap.                              |
 | `showBackground` | `boolean`                     | `true`  | Show the dotted background grid.               |
 | `layoutOptions`  | `LayoutOptions`               | —       | Algorithm, direction, and node spacing (see below). |
+| `edgeConnection` | `'column' \| 'floating'`      | `'column'` | How edges attach to tables (see [Edge connection mode](#edge-connection-mode)). |
 | `onParseError`   | `(error: DbmlParseError) => void` | —   | Called when the DBML fails to parse.           |
 | `onLayoutError`  | `(error: LayoutError) => void` | —      | Called when a `dagre`/`elk` layout fails (e.g. missing optional dep). |
 | `nodePositions`  | `NodePositions`               | —       | Saved table positions (`id → {x,y}`) to restore. See [Persisting positions](#persisting-node-positions). |
@@ -154,6 +157,10 @@ If a `dagre`/`elk` layout throws (e.g. the dependency isn't installed), the view
 built-in `simple` layout and calls `onLayoutError`. `direction` is `'LR'` (left→right) or `'TB'`
 (top→bottom).
 
+The `simple` layout places FK-connected tables as the layered graph, then packs tables with **no
+relations** into a grid below it (filling left-to-right, then wrapping) instead of stacking them in a
+tall left-hand column.
+
 ### Node width
 
 Table nodes are sized to their content (the widest column row and the header), clamped between
@@ -167,6 +174,19 @@ Table nodes are sized to their content (the widest column row and the header), c
 
 ```tsx
 <DbmlViewer dbml={dbml} layoutOptions={{ minNodeWidth: 200, maxNodeWidth: 480 }} />
+```
+
+## Edge connection mode
+
+`edgeConnection` controls how relations attach to tables:
+
+| Value        | Behaviour                                                                            |
+| ------------ | ------------------------------------------------------------------------------------ |
+| `'column'`   | Default. Each edge anchors to its specific FK/PK column rows.                         |
+| `'floating'` | Edges connect table-to-table, attaching wherever the two tables face each other and following them as they move ([floating-edge style](https://reactflow.dev/examples/edges/simple-floating-edges)). |
+
+```tsx
+<DbmlViewer dbml={dbml} edgeConnection="floating" />
 ```
 
 ## Persisting node positions
@@ -236,15 +256,24 @@ function App() {
 
 `DbmlViewerHandle`:
 
-| Method                                                  | Description                                        |
-| ------------------------------------------------------- | -------------------------------------------------- |
-| `download(filename, options?)`                          | Render the diagram and trigger a browser download. |
-| `toDataUrl(options?)` → `Promise<string>`               | Return the image as a data URL.                    |
+| Method                                     | Description                                        |
+| ------------------------------------------ | -------------------------------------------------- |
+| `download(filename, options?)`             | Render the diagram and trigger a browser download. |
+| `toDataUrl(options?)` → `Promise<string>`  | Return the image as a data URL.                    |
+| `fitView(options?)`                        | Fit the whole diagram into the viewport.           |
+| `zoomIn(options?)` / `zoomOut(options?)`   | Zoom by one step.                                  |
+| `zoomTo(level, options?)`                  | Zoom to a specific level (`1` = 100%).             |
+| `setCenter(x, y, options?)`                | Center the viewport on a flow-coordinate point.    |
+| `fitBounds(bounds, options?)`              | Fit a flow-coordinate rectangle into the viewport. |
+| `setViewport(viewport, options?)` / `getViewport()` | Set / read the viewport (`{ x, y, zoom }`). |
 
 `DiagramExportOptions`: `type` (`'png'` \| `'svg'`, default `'png'`), `padding` (default `24`),
 `backgroundColor` (defaults to the viewer's canvas color), `pixelRatio` (PNG sharpness, default `2`).
 The export reflects the current theme. If `html-to-image` isn't installed, the methods reject with an
 `ExportError`.
+
+The viewport methods delegate to the underlying React Flow instance (and are no-ops before the
+diagram mounts); their option types (`FitViewOptions`, `Viewport`, …) are re-exported from the package.
 
 ## Lower-level API
 

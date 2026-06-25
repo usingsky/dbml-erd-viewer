@@ -45,11 +45,42 @@ body {
 .pg__panel {
   display: flex;
   flex-direction: column;
-  width: 360px;
+  width: var(--pg-panel-width, 360px);
   flex: none;
   border-right: 1px solid var(--border);
   background: var(--panel);
   overflow-y: auto;
+}
+
+/* Draggable divider between the settings panel and the preview. */
+.pg__resizer {
+  position: relative;
+  flex: none;
+  width: 6px;
+  cursor: col-resize;
+  background: var(--border);
+  transition: background 0.12s ease;
+}
+/* Centered grip so the drag affordance reads clearly. */
+.pg__resizer::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 24px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  transition: background 0.12s ease;
+}
+.pg__resizer:hover,
+.pg__resizer:active {
+  background: var(--accent);
+}
+.pg__resizer:hover::before,
+.pg__resizer:active::before {
+  background: #fff;
 }
 .pg__panel::-webkit-scrollbar {
   width: 10px;
@@ -149,6 +180,42 @@ body {
 .pg__row label {
   font-size: 13px;
   color: var(--text);
+}
+
+/* ---- Stacked field: label (+ optional value) above a full-width control ---- */
+.pg__field {
+  margin-bottom: 12px;
+}
+.pg__field:last-child {
+  margin-bottom: 0;
+}
+.pg__field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.pg__field-head label {
+  font-size: 13px;
+  color: var(--text);
+}
+.pg__field-val {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pg__field select,
+.pg__field input[type='range'],
+.pg__field input[type='text'] {
+  width: 100%;
+}
+
+/* Sub-group heading within a section (sentence-case, below the uppercase h2). */
+.pg__subhead {
+  margin: 16px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
 }
 
 /* ---- Controls ---- */
@@ -332,4 +399,54 @@ input[type='checkbox'] {
 .pg__viewer {
   flex: 1;
   min-width: 0;
+}
+
+/* ---- Mobile: stack the panel above the diagram and let the page scroll ---- */
+@media (max-width: 768px) {
+  html,
+  body,
+  #root {
+    height: auto;
+    min-height: 100%;
+  }
+  .pg {
+    flex-direction: column;
+    height: auto;
+    min-height: 100%;
+  }
+  .pg__panel {
+    width: 100%;
+    flex: none;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow-y: visible;
+  }
+  /* Horizontal resize is meaningless once the panel is stacked above the diagram. */
+  .pg__resizer {
+    display: none;
+  }
+  /* The page scrolls on mobile, so don't pin the header inside the (now short) panel. */
+  .pg__header {
+    position: static;
+  }
+  .pg__viewer {
+    flex: none;
+    width: 100%;
+    height: 70vh;
+    min-height: 360px;
+  }
+}
+
+/* On very narrow screens let control rows wrap instead of overflowing. */
+@media (max-width: 480px) {
+  .pg__row {
+    flex-wrap: wrap;
+  }
+  .pg__row > select,
+  .pg__row > input[type='range'] {
+    width: 100%;
+  }
+  .pg__checks {
+    grid-template-columns: 1fr;
+  }
 }

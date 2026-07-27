@@ -1,4 +1,3 @@
-import * as dbmlCore from '@dbml/core';
 import type { Cardinality, ColumnInfo, ParsedSchema, RelationInfo, TableInfo } from '../types';
 
 /** A relation endpoint with its table id resolved, before classification. */
@@ -8,18 +7,26 @@ interface ResolvedEndpoint {
   relation: Cardinality;
 }
 
-// `@dbml/core` is CommonJS. Node exposes `Parser` as a named export; some bundlers
-// only surface it on the default export — resolve from whichever is present.
 type ParserCtor = new () => DbmlParser;
-const mod = dbmlCore as unknown as { Parser?: ParserCtor; default?: { Parser?: ParserCtor } };
-const resolvedParser = mod.Parser ?? mod.default?.Parser;
-if (!resolvedParser) {
-  throw new Error('Could not resolve `Parser` export from @dbml/core.');
-}
-const Parser: ParserCtor = resolvedParser;
 
 interface DbmlParser {
   parse(input: string, format: string): DbmlDatabase;
+}
+
+/**
+ * Resolve the `Parser` constructor from `@dbml/core`, imported dynamically so the (very large,
+ * ~2.6 MB gzip) parser is code-split into its own chunk instead of the consumer's main bundle —
+ * and only loaded when DBML text actually needs parsing. `@dbml/core` is CommonJS, so `Parser`
+ * may sit on the namespace or the default export depending on the bundler; try both.
+ */
+async function loadParser(): Promise<ParserCtor> {
+  const dbmlCore = (await import('@dbml/core')) as unknown as {
+    Parser?: ParserCtor;
+    default?: { Parser?: ParserCtor };
+  };
+  const resolved = dbmlCore.Parser ?? dbmlCore.default?.Parser;
+  if (!resolved) throw new Error('Could not resolve `Parser` export from @dbml/core.');
+  return resolved;
 }
 
 interface DbmlDatabase {
@@ -165,12 +172,17 @@ function primaryKeyColumns(table: DbmlTable): Set<string> {
 /**
  * Parse a DBML document into a normalized {@link ParsedSchema} of tables and relations.
  *
+ * Async because `@dbml/core` is imported on demand (see {@link loadParser}). If you already
+ * have a parsed schema (e.g. parsed on the server), pass it to `<DbmlViewer schema={...} />`
+ * instead to avoid bundling the parser at all.
+ *
  * @param dbml - DBML source text.
  * @throws {DbmlParseError} when the input is not valid DBML.
  */
-export function parseDbml(dbml: string): ParsedSchema {
+export async function parseDbml(dbml: string): Promise<ParsedSchema> {
   let database: DbmlDatabase;
   try {
+    const Parser = await loadParser();
     database = new Parser().parse(dbml, 'dbmlv2');
   } catch (err) {
     const diagnostics = extractDiagnostics(err);

@@ -5,6 +5,7 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
   type CSSProperties,
 } from 'react';
 import {
@@ -55,6 +56,8 @@ import { themeToCssVars, type DbmlViewerTheme } from '../theme';
 import type { ParsedSchema, RelationInfo, TableInfo } from '../types';
 
 const NO_RELATIONS: RelationInfo[] = [];
+/** Placeholder while an async parse is in flight, so the flow renders empty (not an error). */
+const EMPTY_SCHEMA: ParsedSchema = { tables: [], relations: [] };
 
 const nodeTypes = { table: TableNode };
 const edgeTypes = { erd: ErdEdge, 'erd-floating': FloatingEdge };
@@ -72,8 +75,18 @@ function AutoLayoutIcon() {
 }
 
 export interface DbmlViewerProps {
-  /** DBML source text to render. */
-  dbml: string;
+  /**
+   * DBML source text to render. Parsing pulls in `@dbml/core` (a large dependency, loaded on
+   * demand). If you already have a parsed schema, prefer {@link DbmlViewerProps.schema} to
+   * avoid bundling the parser. Provide exactly one of `dbml` / `schema`.
+   */
+  dbml?: string;
+  /**
+   * A pre-parsed schema (e.g. produced on the server or at build time with `parseDbml`). When
+   * set, the viewer skips parsing entirely, so `@dbml/core` never enters your bundle. Memoize
+   * it (stable reference) to avoid needless work. Provide exactly one of `dbml` / `schema`.
+   */
+  schema?: ParsedSchema;
   /** Class applied to the wrapping element. */
   className?: string;
   /** Inline style for the wrapping element. Defaults to filling its container. */
@@ -341,6 +354,7 @@ function buildEdges(
 export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function DbmlViewer(
   {
     dbml,
+    schema: schemaProp,
     className,
     style,
     theme,
@@ -357,19 +371,33 @@ export const DbmlViewer = forwardRef<DbmlViewerHandle, DbmlViewerProps>(function
   },
   ref,
 ) {
+  // A pre-parsed `schema` prop renders synchronously (no parser). Otherwise `dbml` is parsed
+  // asynchronously — `@dbml/core` is imported on demand — and the result is held in state.
+  const [parsed, setParsed] = useState<ParseResult | null>(null);
+  useEffect(() => {
+    if (schemaProp !== undefined || dbml === undefined) return;
+    let cancelled = false;
+    parseDbml(dbml).then(
+      (s) => !cancelled && setParsed({ ok: true, schema: s }),
+      (error) =>
+        !cancelled &&
+        setParsed({
+          ok: false,
+          error:
+            error instanceof DbmlParseError
+              ? error
+              : new DbmlParseError(String(error), { cause: error }),
+        }),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [dbml, schemaProp]);
+
   const result = useMemo<ParseResult>(() => {
-    try {
-      return { ok: true, schema: parseDbml(dbml) };
-    } catch (error) {
-      return {
-        ok: false,
-        error:
-          error instanceof DbmlParseError
-            ? error
-            : new DbmlParseError(String(error), { cause: error }),
-      };
-    }
-  }, [dbml]);
+    if (schemaProp !== undefined) return { ok: true, schema: schemaProp };
+    return parsed ?? { ok: true, schema: EMPTY_SCHEMA };
+  }, [schemaProp, parsed]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<TableNodeType>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge<ErdEdgeData>>([]);

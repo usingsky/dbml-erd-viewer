@@ -22,11 +22,11 @@ interface HoveredColumn {
 }
 
 /**
- * Track the hovered relation ? driven from either side: hovering an edge, or hovering a
+ * Track the hovered relation — driven from either side: hovering an edge, or hovering a
  * column (the returned `onColumnHover`, wired to `TableNode` via `ColumnHoverContext`). The
  * active relations' endpoint columns get highlighted and the matching edges are emphasized.
  * Nodes/edges not involved keep their original reference so memoized children skip
- * re-rendering ? and `onColumnHover` is NOT stored in node data, so a drag doesn't churn it.
+ * re-rendering — and `onColumnHover` is NOT stored in node data, so a drag doesn't churn it.
  */
 export function useRelationHighlight(
   relations: RelationInfo[],

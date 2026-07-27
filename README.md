@@ -33,11 +33,22 @@
 ## Install
 
 ```bash
-npm install dbml-erd-viewer @xyflow/react @dbml/core react react-dom
+npm install dbml-erd-viewer @xyflow/react react react-dom
 ```
 
-`react`, `react-dom`, `@xyflow/react`, and `@dbml/core` are treated as external — install them
-alongside the library (they are listed as dependencies, so a default install pulls them in).
+`react`, `react-dom`, and `@xyflow/react` are peer dependencies — install them alongside the library.
+
+**Parsing DBML in the browser?** Also install `@dbml/core`:
+
+```bash
+npm install @dbml/core   # only if you pass the `dbml` prop
+```
+
+`@dbml/core` is a large (~2.6 MB gzipped) parser, so it is an **optional** peer dependency and is
+imported on demand — code-split into its own async chunk, so it is never part of your entry/main
+bundle and browsers only download it if a `dbml` string is actually parsed at runtime. If you parse
+your schema elsewhere (server, build step) and pass the result via the
+[`schema` prop](#avoiding-the-parser-bundle), the parser chunk is never fetched.
 
 ## Usage
 
@@ -101,7 +112,8 @@ Table line_items {
 
 | Prop             | Type                          | Default | Description                                    |
 | ---------------- | ----------------------------- | ------- | ---------------------------------------------- |
-| `dbml`           | `string`                      | —       | DBML source text to render (required).         |
+| `dbml`           | `string`                      | —       | DBML source to render. Parsed lazily (loads `@dbml/core`). Provide `dbml` **or** `schema`. |
+| `schema`         | `ParsedSchema`                | —       | Pre-parsed schema; skips parsing so `@dbml/core` never enters your bundle. See [Avoiding the parser bundle](#avoiding-the-parser-bundle). |
 | `fitView`        | `boolean`                     | `true`  | Fit the diagram into view on load.             |
 | `showControls`   | `boolean`                     | `true`  | Show the zoom/pan controls.                    |
 | `showMiniMap`    | `boolean`                     | `false` | Show the minimap.                              |
@@ -282,11 +294,28 @@ The parsing and layout helpers are exported for building custom renderers:
 ```ts
 import { parseDbml, layoutSchema } from 'dbml-erd-viewer';
 
-const schema = parseDbml(dbml);     // { tables, relations }
-const boxes = layoutSchema(schema); // Map<tableId, { x, y, width, height }>
+const schema = await parseDbml(dbml); // async: loads @dbml/core on demand → { tables, relations }
+const boxes = layoutSchema(schema); //   Map<tableId, { x, y, width, height }>
 ```
 
 See `src/types.ts` for the full `ParsedSchema`, `TableInfo`, `ColumnInfo`, and `RelationInfo` shapes.
+
+### Avoiding the parser bundle
+
+`@dbml/core` is large. To keep it out of your bundle entirely, parse the DBML **outside the browser**
+(server, build step, or a background worker) and pass the resulting `ParsedSchema` to the `schema`
+prop instead of `dbml`:
+
+```tsx
+// server / build: import { parseDbml } from 'dbml-erd-viewer'; const schema = await parseDbml(src);
+// client:
+<DbmlViewer schema={schema} />
+```
+
+When `schema` is set the viewer never executes the `import('@dbml/core')`, so its chunk is never
+downloaded. Pass **either** `dbml` **or** `schema` (memoize `schema` so its reference is stable).
+With `dbml`, the parser is still loaded lazily as a separate chunk, so it never bloats your entry
+bundle either way. (`@dbml/core` is only needed for the `dbml` path — install it when you use it.)
 
 ## Theming
 
